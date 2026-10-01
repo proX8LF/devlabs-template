@@ -1,59 +1,8 @@
-"use client";
 import { useEffect, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type SelectHTMLAttributes, type TextareaHTMLAttributes } from "react";
-import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { Menu, Moon, Sun, X } from "lucide-react";
-import { LANG_COOKIE, THEME_COOKIE, getDict, type Lang } from "@/lib/i18n-dict";
+import { useLang, useTheme } from "@/lib/i18n";
 import { site } from "@/lib/site";
-
-/* ---------- i18n context ---------- */
-import { createContext, useContext } from "react";
-import type { Dict } from "@/lib/i18n-dict";
-
-const Ctx = createContext<{ lang: Lang; t: Dict }>({ lang: "en", t: getDict("en") });
-export function LangProvider({ lang, children }: { lang: Lang; children: React.ReactNode }) {
-  const dict = getDict(lang);
-  return <Ctx.Provider value={{ lang, t: dict }}>{children}</Ctx.Provider>;
-}
-export const useLang = () => useContext(Ctx);
-
-export function LangToggle() {
-  const { lang } = useLang();
-  const other: Lang = lang === "ar" ? "en" : "ar";
-  return (
-    <button
-      type="button" className="btn ghost mono" style={{ border: "1px solid var(--line)", padding: "8px 14px" }}
-      onClick={() => {
-        document.cookie = `${LANG_COOKIE}=${other};path=/;max-age=31536000`;
-        window.location.reload();
-      }}
-      aria-label="language"
-    >
-      {lang === "ar" ? "EN" : "عربي"}
-    </button>
-  );
-}
-
-export function ThemeToggle() {
-  const [dark, setDark] = useState(false);
-  useEffect(() => {
-    setDark(document.documentElement.classList.contains("dark"));
-  }, []);
-  return (
-    <button
-      type="button" className="btn ghost" style={{ border: "1px solid var(--line)", padding: "8px 12px" }}
-      onClick={() => {
-        const next = !dark;
-        setDark(next);
-        document.documentElement.classList.toggle("dark", next);
-        document.cookie = `${THEME_COOKIE}=${next ? "dark" : "light"};path=/;max-age=31536000`;
-      }}
-      aria-label="theme"
-    >
-      {dark ? <Sun size={17} /> : <Moon size={17} />}
-    </button>
-  );
-}
 
 /* ---------- primitives ---------- */
 export function SectionLabel({ children }: { children: React.ReactNode }) {
@@ -85,9 +34,7 @@ export function Select(props: SelectHTMLAttributes<HTMLSelectElement>) {
 
 export function StatusBadge({ status, label }: { status: string; label?: string }) {
   const color = status === "done" ? "var(--ok)" : "var(--muted)";
-  return (
-    <span className="badge"><i style={{ background: color }} />{label ?? status}</span>
-  );
+  return <span className="badge"><i style={{ background: color }} />{label ?? status}</span>;
 }
 
 export function EmptyState({ code, title, action }: { code: string; title: string; action?: React.ReactNode }) {
@@ -100,24 +47,50 @@ export function EmptyState({ code, title, action }: { code: string; title: strin
   );
 }
 
+export function LangToggle() {
+  const { lang, setLang } = useLang();
+  return (
+    <button
+      type="button" className="btn ghost mono" style={{ border: "1px solid var(--line)", padding: "8px 14px" }}
+      onClick={() => setLang(lang === "ar" ? "en" : "ar")}
+      aria-label="language"
+    >
+      {lang === "ar" ? "EN" : "عربي"}
+    </button>
+  );
+}
+
+export function ThemeToggle() {
+  const [theme, toggle] = useTheme();
+  const dark = theme === "dark";
+  return (
+    <button
+      type="button" className="btn ghost" style={{ border: "1px solid var(--line)", padding: "8px 12px" }}
+      onClick={toggle} aria-label="theme"
+    >
+      {dark ? <Sun size={17} /> : <Moon size={17} />}
+    </button>
+  );
+}
+
 /* ---------- site header ---------- */
 export function SiteHeader({ actions }: { actions?: React.ReactNode }) {
   const { t } = useLang();
   return (
     <header className="site-header">
       <div className="header-frame">
-        <Link href="/" className="brandlock" aria-label="home">
+        <Link to="/" className="brandlock" aria-label="home">
           {site.name}<br /><em>{site.accent}</em>
         </Link>
         <nav className="nav" aria-label="Primary">
-          <Link href="/dashboard/items">{t.nav_items}</Link>
-          <Link href="/dashboard">{t.nav_dashboard}</Link>
-          <Link href="/dashboard/settings">{t.nav_settings}</Link>
+          <Link to="/dashboard/items">{t.nav_items}</Link>
+          <Link to="/dashboard">{t.nav_dashboard}</Link>
+          <Link to="/dashboard/settings">{t.nav_settings}</Link>
         </nav>
         <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
           <ThemeToggle />
           <LangToggle />
-          {actions ?? <Link href="/dashboard/items/new" className="btn">{t.nav_new} <span className="arr">→</span></Link>}
+          {actions ?? <Link to="/dashboard/items/new" className="btn">{t.nav_new} <span className="arr">→</span></Link>}
         </div>
       </div>
     </header>
@@ -125,33 +98,38 @@ export function SiteHeader({ actions }: { actions?: React.ReactNode }) {
 }
 
 /* ---------- dashboard chrome ---------- */
+const NAV = [
+  { to: "/dashboard", label: "nav_dashboard" as const, end: true },
+  { to: "/dashboard/items", label: "nav_items" as const, end: false },
+  { to: "/dashboard/settings", label: "nav_settings" as const, end: false },
+];
+
 export function DashboardChrome({ email, children }: { email: string; children: React.ReactNode }) {
   const { t } = useLang();
-  const pathname = usePathname();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
-  useEffect(() => { setOpen(false); }, [pathname]);
-  const items = [
-    { href: "/dashboard", label: t.nav_dashboard },
-    { href: "/dashboard/items", label: t.nav_items },
-    { href: "/dashboard/settings", label: t.nav_settings },
-  ];
-  const isActive = (href: string) => (href === "/dashboard" ? pathname === href : pathname === href || pathname.startsWith(`${href}/`));
+  useEffect(() => { setOpen(false); }, [location.pathname]);
+  const activeLabel = [...NAV].reverse().find((it) => (it.end ? location.pathname === it.to : location.pathname === it.to || location.pathname.startsWith(`${it.to}/`)));
   const nav = (
     <>
-      <Link href="/" className="snav-brand">
+      <Link to="/" className="snav-brand">
         <span style={{ fontWeight: 800, fontSize: 17 }}>{site.name}<em style={{ fontStyle: "normal", color: "var(--cobalt)" }}>{site.accent}</em></span>
         <span className="mono mut" style={{ fontSize: 10, marginInlineStart: "auto" }}>{t.nav_dashboard}</span>
       </Link>
       <nav className="snav-list" aria-label="Dashboard">
-        {items.map((it) => (
-          <Link key={it.href} href={it.href} className={`snav-link${isActive(it.href) ? " active" : ""}`} aria-current={isActive(it.href) ? "page" : undefined}>
-            <span>{it.label}</span>
-          </Link>
+        {NAV.map((it) => (
+          <NavLink
+            key={it.to} to={it.to} end={it.end}
+            className={({ isActive }) => `snav-link${isActive ? " active" : ""}`}
+          >
+            {t[it.label]}
+          </NavLink>
         ))}
       </nav>
       <div className="snav-foot">
         <div className="mono mut" style={{ fontSize: 10, overflow: "hidden", textOverflow: "ellipsis" }} dir="ltr">{email}</div>
-        <Link href="/" className="btn secondary" style={{ justifyContent: "center" }}>← Site</Link>
+        <Link to="/" className="btn secondary" style={{ justifyContent: "center" }}>← Site</Link>
       </div>
     </>
   );
@@ -164,12 +142,12 @@ export function DashboardChrome({ email, children }: { email: string; children: 
             <button type="button" className="btn ghost dash-drawer-btn" onClick={() => setOpen(true)} aria-label="menu" style={{ padding: 8 }}>
               <Menu size={20} />
             </button>
-            <h1 className="dash-title">{items.find((it) => isActive(it.href))?.label ?? t.nav_dashboard}</h1>
+            <h1 className="dash-title">{activeLabel ? t[activeLabel.label] : t.nav_dashboard}</h1>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <ThemeToggle />
             <LangToggle />
-            <Link href="/dashboard/items/new" className="btn">+ {t.nav_new}</Link>
+            <button type="button" className="btn" onClick={() => navigate("/dashboard/items/new")}>+ {t.nav_new}</button>
           </div>
         </header>
         <main id="main" className="dash-main">{children}</main>
@@ -187,4 +165,8 @@ export function DashboardChrome({ email, children }: { email: string; children: 
       </div>
     </div>
   );
+}
+
+export function GhostButton(props: ButtonHTMLAttributes<HTMLButtonElement>) {
+  return <button type="button" {...props} className={`btn ghost ${props.className ?? ""}`} />;
 }
