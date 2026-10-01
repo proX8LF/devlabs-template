@@ -1,9 +1,5 @@
 node_modules/
-.next/
-out/
-storage/
-data/*.json
-!data/.gitkeep
+dist/
 *.log
 .env
 .env.local
