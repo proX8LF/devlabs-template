@@ -1,31 +1,33 @@
-import { promises as fs } from "fs";
-import path from "path";
 import type { Item, SiteSettings } from "./types";
 import { site } from "./site";
 
-const DATA_DIR = process.env.VERCEL ? path.join("/tmp", "data") : path.join(process.cwd(), "data");
+const ITEMS_KEY = "tpl-items-v1";
+const SETTINGS_KEY = "tpl-settings-v1";
 
-// Memory overlay: Vercel's filesystem is read-only, so disk writes can fail.
-// The overlay keeps the API functional per instance instead of crashing.
-const mem = new Map<string, unknown>();
-
-async function readJson<T>(file: string, fallback: T): Promise<T> {
-  if (mem.has(file)) return mem.get(file) as T;
+function read<T>(key: string, fallback: T): T {
   try {
-    return JSON.parse(await fs.readFile(path.join(DATA_DIR, file), "utf8")) as T;
+    const raw = localStorage.getItem(key);
+    if (!raw) return fallback;
+    return JSON.parse(raw) as T;
   } catch {
     return fallback;
   }
 }
 
-async function writeJson(file: string, value: unknown): Promise<void> {
-  mem.set(file, value);
+function write(key: string, value: unknown): void {
   try {
-    await fs.mkdir(DATA_DIR, { recursive: true });
-    await fs.writeFile(path.join(DATA_DIR, file), JSON.stringify(value, null, 2), "utf8");
+    localStorage.setItem(key, JSON.stringify(value));
   } catch {
-    // read-only (serverless): memory overlay serves reads
+    // storage full/blocked — memory fallback below keeps the session working
+    mem.set(key, value);
   }
+}
+
+const mem = new Map<string, unknown>();
+
+function readMem<T>(key: string, fallback: T): T {
+  if (mem.has(key)) return mem.get(key) as T;
+  return read<T>(key, fallback);
 }
 
 const defaultSettings = (): SiteSettings => ({
@@ -35,31 +37,59 @@ const defaultSettings = (): SiteSettings => ({
   updatedAt: new Date().toISOString(),
 });
 
+function seed(): void {
+  if (read<Item[]>(ITEMS_KEY, []).length > 0) return;
+  const now = new Date().toISOString();
+  write(ITEMS_KEY, [
+    {
+      id: "seed_1",
+      title: "Welcome aboard",
+      details: "This is a seeded example item. Edit it, toggle its status, duplicate it, or delete it — everything runs locally in your browser.",
+      status: "open",
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "seed_2",
+      title: "Rebrand the template",
+      details: "Open src/lib/site.ts and make it yours: name, accent, email, footer.",
+      status: "open",
+      createdAt: now,
+      updatedAt: now,
+    },
+  ] as Item[]);
+}
+
+/** Local-first store. Same function names as the server version —
+ *  point these at a real API later without touching pages. */
 export const db = {
-  async listItems(): Promise<Item[]> {
-    const all = await readJson<Item[]>("items.json", []);
-    return all.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  listItems(): Item[] {
+    seed();
+    return readMem<Item[]>(ITEMS_KEY, []).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   },
-  async getItem(id: string): Promise<Item | null> {
-    return ((await this.listItems()).find((x) => x.id === id) ?? null) as Item | null;
+  getItem(id: string): Item | null {
+    return this.listItems().find((x) => x.id === id) ?? null;
   },
-  async saveItem(item: Item): Promise<Item> {
-    const all = await readJson<Item[]>("items.json", []);
+  saveItem(item: Item): Item {
+    const all = readMem<Item[]>(ITEMS_KEY, []);
     const i = all.findIndex((x) => x.id === item.id);
     if (i >= 0) all[i] = item;
     else all.push(item);
-    await writeJson("items.json", all);
+    write(ITEMS_KEY, all);
     return item;
   },
-  async deleteItem(id: string): Promise<void> {
-    const all = await readJson<Item[]>("items.json", []);
-    await writeJson("items.json", all.filter((x) => x.id !== id));
+  deleteItem(id: string): void {
+    write(ITEMS_KEY, readMem<Item[]>(ITEMS_KEY, []).filter((x) => x.id !== id));
   },
-  async getSettings(): Promise<SiteSettings> {
-    return readJson<SiteSettings>("settings.json", defaultSettings());
+  getSettings(): SiteSettings {
+    return readMem<SiteSettings>(SETTINGS_KEY, defaultSettings());
   },
-  async saveSettings(s: SiteSettings): Promise<SiteSettings> {
-    await writeJson("settings.json", s);
+  saveSettings(s: SiteSettings): SiteSettings {
+    write(SETTINGS_KEY, s);
     return s;
   },
 };
+
+export function newId(prefix = "itm_"): string {
+  return `${prefix}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+}
