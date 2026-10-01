@@ -6,39 +6,35 @@
 
 ## 1. What this is
 
-A **customizable, ready-to-run SaaS starter**: Next.js 14 (App Router) + React 18 +
-TypeScript (strict) + Zod + lucide-react. No Tailwind, no database server, no auth
-provider — plain CSS design tokens, a file-backed JSON store, and an auth stub.
-It runs with `npm install && npm run dev` and deploys to Vercel with zero config.
+A **customizable, ready-to-run SaaS starter**: Vite 7 + React 18 + React Router 6
++ TypeScript (strict) + Zod + lucide-react. No Next.js, no backend, no database
+server, no auth provider — plain CSS design tokens, a localStorage store, and an
+auth stub. It runs with `npm install && npm run dev` and deploys to Vercel as a
+static SPA (rewrite to `/index.html` is already configured).
 
-Primary language of the UI is English with **first-class Arabic/RTL** (cookie
-`tpl-lang`, `dir` on `<html>`, IBM Plex Sans Arabic). Theme is light/dark
-(cookie `tpl-theme`, `dark` class on `<html>`).
+Primary language of the UI is English with **first-class Arabic/RTL**
+(localStorage `tpl-lang`, `dir` on `<html>`, IBM Plex Sans Arabic, instant
+switch with no reload). Theme is light/dark (localStorage `tpl-theme`, `dark`
+class, pre-hydration script in `index.html` prevents flashing).
 
 ## 2. Project map
 
 ```
-src/app/layout.tsx        root layout: lang/dir/theme from cookies, fonts, LangProvider
-src/app/globals.css       THE design system (tokens + all component CSS)
-src/app/page.tsx          landing
-src/app/dashboard/layout.tsx   dashboard shell (sidebar + topbar + drawer)
-src/app/dashboard/page.tsx     KPIs + recent + quick actions
-src/app/dashboard/items/       list (client) / new (client) / [id] (client)
-src/app/dashboard/settings/page.tsx  brand settings form
-src/app/api/items/route.ts     GET list / POST create
-src/app/api/items/[id]/route.ts GET / PATCH / DELETE
-src/app/api/settings/route.ts  GET / PATCH
-src/app/api/health/route.ts    GET liveness probe
-src/components/ui.tsx      "use client": ALL UI (primitives, header, dashboard chrome, toggles)
-src/lib/site.ts            brand config — rebrand here ONLY
-src/lib/types.ts           domain types (Item, SiteSettings — extend here)
-src/lib/validators.ts      zod schemas + fieldErrors()
-src/lib/db.ts              JSON store + serverless memory overlay (swap point for Postgres)
-src/lib/auth.ts            auth stub + requireSession() (swap point for Auth.js/Clerk)
-src/lib/i18n-dict.ts       EN + AR dictionaries (add EN key first, then AR mirror)
-src/lib/i18n.ts            getServerLang()/getServerTheme() (server only)
-src/middleware.ts          route guard (active only when AUTH_ENFORCED=true)
-data/                      runtime JSON (git-ignored; created on demand)
+index.html                fonts, title, pre-hydration theme/dir script
+src/main.tsx              React root + stylesheet
+src/App.tsx               router (/, /dashboard/*) + RequireAuth guard
+src/styles.css            THE design system (tokens + all component CSS)
+src/pages/Landing.tsx     landing
+src/pages/DashboardHome.tsx  CLP-style home: KPIs, attention, chart, status, storage, recent
+src/pages/ItemsList.tsx / ItemNew.tsx / ItemDetail.tsx / SettingsPage.tsx / NotFound.tsx
+src/components/ui.tsx     "use client"-free UI kit: primitives, header, dashboard chrome, toggles
+src/lib/site.ts           brand config — rebrand here ONLY
+src/lib/types.ts          domain types (Item, SiteSettings — extend here)
+src/lib/validators.ts     zod schemas (client-validated; same schemas a server would use)
+src/lib/db.ts             localStorage store + seed (swap point for a real API)
+src/lib/auth.ts           auth stub (swap point; RequireAuth in App.tsx)
+src/lib/i18n-dict.ts      EN + AR dictionaries (add EN key first, then AR mirror)
+src/lib/i18n.tsx          LangProvider/useLang/useTheme + document application
 ```
 
 ## 3. Iron rules
@@ -49,30 +45,28 @@ data/                      runtime JSON (git-ignored; created on demand)
    `.mono` stack (`JetBrains Mono` + Arabic fallback). Body uses Inter / Plex Arabic.
 3. **New UI goes in `src/components/ui.tsx`.** One client module, no new component
    files unless the file exceeds ~400 lines.
-4. **Server components stay server.** Anything importing `next/headers` must NEVER
-   be imported (even transitively) by a `"use client"` module. Split dict/helpers
-   (`i18n-dict.ts`) from server helpers (`i18n.ts`) — this exact split exists
-   because violating it breaks the production build with a webpack error.
-5. **Validate twice.** Zod in the API route (source of truth) + light client checks
-   for UX. Never trust the client; return 422 with `{ fields }`.
-6. **Keep `db.ts` signatures stable.** Pages and APIs may only use its functions —
-   this is what makes swapping in Postgres a 1-file job.
+4. **No Next.js here — plain React Router.** Pages are components in
+   `src/pages/`, routes live in `src/App.tsx`, links are `react-router-dom`
+   (`to=`, `NavLink`, `useNavigate`, `useParams`). No SSR, no server components,
+   no `next/*` imports — ever.
+5. **Validate with zod on every write.** Same schemas a server would enforce;
+   map `issue.path` to inline field errors. Never trust raw input.
+6. **Keep `db.ts` function names stable.** Pages may only use its functions —
+   this is what makes swapping in a real backend a 1-file job.
 7. **No secrets in code or git.** `.env.example` documents, `.env*` is ignored.
    Tokens live in environment only, never in files, never in chat logs.
 
 ## 4. Recipes
 
-**Rebrand:** `src/lib/site.ts` → colors/fonts in `globals.css` `:root`/`html.dark`.
-**New page:** add `src/app/dashboard/<name>/page.tsx` + sidebar link in `ui.tsx`
-`DashboardChrome` + dict keys (EN then AR).
+**Rebrand:** `src/lib/site.ts` → colors/fonts in `src/styles.css` `:root`/`html.dark`.
+**New page:** add `src/pages/<Name>.tsx` + route in `src/App.tsx` + sidebar link
+in `ui.tsx` `NAV` + dict keys (EN then AR).
 **New resource (copy `items`):** types → validators → `db.ts` methods →
-`api/<name>/route.ts` + `[id]/route.ts` → list/new/`[id]` pages.
-**New API:** validate with zod, `requireSession()` for writes, JSON errors only
-(never stack traces), proper status codes (201/400/422/404).
-**Real database:** re-implement the functions in `src/lib/db.ts`; keep names,
-args and return shapes identical — nothing else changes.
-**Real auth:** `AUTH_ENFORCED=true`, implement session lookup in `auth.ts`
-`getSession()`; `middleware.ts` already guards `/dashboard/*` + mutating APIs.
+list/new/detail pages + routes.
+**Real backend:** re-implement the functions in `src/lib/db.ts` as async fetch
+calls against your API; add loading/error states at call sites.
+**Real auth:** `VITE_AUTH_ENFORCED=true`, implement session lookup in `auth.ts`
+`getSession()`; `RequireAuth` in `App.tsx` already guards.
 
 ## 5. Field notes — lessons from building the parent project
 
@@ -97,18 +91,18 @@ These are real bugs we hit and fixed. Treat them as checklists, not trivia.
 - Always verify Arabic by fetching pages with the lang cookie set and grepping
   for expected strings AND for leaked English chrome.
 
-### 5.2 Next.js App Router boundaries
-- `next/headers` (`cookies()`) = server only. A client component importing it —
-  even 3 hops away — fails the build. Keep a `-dict` (pure) vs server-helper
-  split for every shared module.
-- `useSearchParams()` in a statically prerendered page **requires a
-  `<Suspense>` boundary** or the build fails at "Collecting page data".
-  Wrap it even when you believe the page is dynamic.
-- `cookies()` in the root layout makes **every route dynamic** — accept it for
-  cookie-driven lang/theme, or move to client-side theming.
-- Server actions / route handlers: return `{ error }` JSON + status codes;
-  an empty 500 body surfaces on the client as `JSON.parse: unexpected end of
-  data` — parse defensively and include status + body snippet in the message.
+### 5.2 SPA / Vite notes (we left Next.js for these reasons)
+- No SSR/prerender: `useSearchParams`-style build failures, `next/headers`
+  client-boundary errors, and cookie-driven dynamic routes cannot happen here.
+- Deep links need the SPA rewrite (`vercel.json` maps `/(.*)` → `/index.html`).
+- Lang/theme apply instantly via context; the inline `index.html` script
+  restores them pre-hydration to avoid flashing.
+- Storage is `localStorage` (~5MB, JSON-serializable only). Quota/full errors
+  are caught; Files/Blobs belong server-side when a backend is added.
+- History: the v1 generation was Next.js — its hard lessons (server/client
+  import splits, Suspense boundaries for search params, read-only Vercel FS
+  with a memory overlay, `/_document` cache poisoning fixed by deleting
+  `.next`) are kept in git history for reference if you ever go back.
 
 ### 5.3 Vercel / serverless
 - The filesystem is **read-only** (except `/tmp`). This template's `db.ts`
@@ -151,8 +145,19 @@ These are real bugs we hit and fixed. Treat them as checklists, not trivia.
 
 ## 6. Definition of done (for any agent task on this repo)
 
-1. `npm run typecheck` clean. 2. `npm run lint` no errors. 3. `npm run build`
-   passes. 4. Dev server boots; every touched route returns 200; every touched
-   API returns the documented shape. 5. AR (cookie) + dark (cookie) render
-   correctly on touched pages. 6. No secrets added. 7. README/about updated if
-   behavior changed.
+1. `npm run typecheck` clean. 2. `npm run build` passes. 3. Preview server
+   boots; every touched route renders; CRUD round-trips in a fresh profile.
+4. AR (toggle) + dark (toggle) render correctly on touched pages. 5. No secrets
+   added. 6. README/about updated if behavior changed.
+
+## 7. Vite notes (why no Next.js here)
+
+- No SSR/prerender: `useSearchParams`-style build failures cannot happen; route
+  params come from `useParams()`.
+- Deep links need the SPA rewrite (`vercel.json` already maps `/(.*)` to
+  `/index.html`); without it, refresh on `/dashboard/items/x` 404s in production.
+- Lang/theme apply instantly via context (no reload); the inline script in
+  `index.html` restores them pre-hydration to avoid flashing.
+- Storage is `localStorage` (~5MB): fine for a starter; quota errors are
+  caught, content is JSON-serializable only (no Files/Blobs — store those
+  server-side when you add a backend).
